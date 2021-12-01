@@ -12,6 +12,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <sys/stat.h>
 
 #define LISTENQ  1024  /* second argument to listen() */
 #define MAXREAD  80000
@@ -32,7 +33,7 @@ int main(int argc, char **argv) {
         exit(0);
     }
     port = atoi(argv[1]);
-    dfsno = port % 4;
+    dfsno = ((port-1) % 4) + 1;
 
     listenfd = open_listenfd(port);
     while (1) {
@@ -55,6 +56,7 @@ void * thread(void * vargp) {
     free(vargp);
     // Process the header to get details of request
     size_t n, m;
+    int keepopen = 1;
     int msgsz;
     char buf[MAXREAD];
     char buf1[MAXREAD];
@@ -66,38 +68,55 @@ void * thread(void * vargp) {
     char *temp = NULL;
     char *tgtpath;
     char *fname = (char*) malloc (100*sizeof(char));
+    char *folder = (char*) malloc (100*sizeof(char));
     char *httpver;
     char *uname;
     char *pass;
     FILE *fp;
-    n = read(connfd, buf, MAXREAD);
-    if ((int)n >= 0) {
-        printf("Request received\n");
-        comd = strtok_r(buf, " \t\r\n\v\f", &context);
-        uname = strtok_r(NULL, " \t\r\n\v\f", &context);
-        pass = strtok_r(NULL, " \t\r\n\v\f", &context);
-        if (checkCreds(uname, pass)) {
-            if (strcmp(comd, "GET") == 0) {
-                tgtpath = strtok_r(NULL, " \t\r\n\v\f", &context);
-            } else if (strcmp(comd, "PUT") == 0) {
-                tgtpath = strtok_r(NULL, " \t\r\n\v\f", &context);
-                sprintf(fname,"./DFS%d/%s/%s", dfsno, uname, tgtpath);
-                fp = fopen(fname, "wb+");
-                m = 1;
-                while ((int)m > 0) {
-                    m = read(connfd, buf1, MAXREAD);
-                    fwrite(buf1, 1, m, fp);
+    struct stat sb;
+    while(keepopen) {
+        keepopen = 0;
+        n = read(connfd, buf, MAXREAD); // COMD UNAME PASS FNAME
+        if ((int)n >= 0) {
+            printf("Request received\n");
+            comd = strtok_r(buf, " \t\r\n\v\f", &context);
+            uname = strtok_r(NULL, " \t\r\n\v\f", &context);
+            pass = strtok_r(NULL, " \t\r\n\v\f", &context);
+            if (checkCreds(uname, pass)) {
+                if (strcmp(comd, "GET") == 0) {
+                    tgtpath = strtok_r(NULL, " \t\r\n\v\f", &context);
+                } else if (strcmp(comd, "PUT") == 0) {
+                    tgtpath = strtok_r(NULL, " \t\r\n\v\f", &context);
+                    sprintf(fname,"./DFS%d/%s/%s", dfsno, uname, tgtpath);
+                    fp = fopen(fname, "wb+");
+                    m = 1;
+                    while ((int)m > 0) {
+                        m = read(connfd, buf1, MAXREAD); // DATA
+                        fwrite(buf1, 1, m, fp);
+                    }
+                    fclose(fp);
+                } else if (strcmp(comd, "LIST") == 0) {
+                    
+                } else if (strcmp(comd, "MKDIR") == 0) {
+                    keepopen = 1;
+                    sprintf(folder, "./DFS%d/%s", dfsno, uname);
+                    if (!(stat(folder, &sb) == 0 && S_ISDIR(sb.st_mode))) {
+                        if (mkdir(folder, 0777) == -1) {
+                            //FAILED TO CREATE DIRECTORY
+                            sprintf(resp, "FAILED TO CREATE DIRECTORY");
+                        } else {
+                            sprintf(resp, "SUCCESSFULLY CREATED DIRECTORY");
+                        }
+                    } else {
+                        sprintf(resp, "DIRECTORY ALREADY EXISTS");
+                    }
+                    write(connfd, resp, strlen(resp));
+                } else {
+                    //INVALID COMMAND
                 }
-                fclose(fp);
-            } else if (strcmp(comd, "LIST") == 0) {
-                
-            } else if (strcmp(comd, "MKDIR") == 0) {
-                tgtpath = strtok_r(NULL, " \t\r\n\v\f", &context);
             } else {
-                //INVALID COMMAND
+                //WRONG CREDENTIALS
             }
-        } else {
-            //WRONG CREDENTIALS
         }
     }
     printf("Closing thread\n");

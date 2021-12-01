@@ -13,16 +13,16 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 
-#define MAXLINE  8192  /* max text line length */
-#define MAXBUF   8192  /* max I/O buffer size */
 #define LISTENQ  1024  /* second argument to listen() */
 #define MAXREAD  80000
 
 int open_listenfd(int port);
-void *thread(void *vargp);
+void performOp(int op);
+char* tolowerstr(char* str);
 
 int main(int argc, char **argv) {
-    int listenfd, *connfdp, port, clientlen=sizeof(struct sockaddr_in);
+    int op, *connfdp, port, clientlen=sizeof(struct sockaddr_in);
+    char* oper = (char*) malloc (10 * sizeof(char));
     struct sockaddr_in clientaddr;
     pthread_t tid; 
 
@@ -30,31 +30,34 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: %s <port>\n", argv[0]);
         exit(0);
     }
+    op = 1;
     port = atoi(argv[1]);
-
-    listenfd = open_listenfd(port);
-    while (1) {
-        connfdp = malloc(sizeof(int));
-        *connfdp = accept(listenfd, (struct sockaddr*)&clientaddr, &clientlen);
-        // Create a new thread only if a new connection arrives
-        if (*connfdp >= 0)
-            pthread_create(&tid, NULL, thread, connfdp);
+    while(op >= 1 && op <= 3) {
+        printf("Enter the operation:\n");
+        scanf("%s", oper);
+        if (strcmp(tolowerstr(oper), "put"))
+        performOp(op);
     }
 }
 
+char* tolowerstr(char* oper) {
+    char* operlower = (char*) malloc (10 * sizeof(char));
+    size_t n = strlen(oper);
+    int i;
+    for (i = 0; i < (int)n; i++) {
+        operlower[i] = tolower(oper[i]);
+    }
+    return operlower;
+}
 
 /* thread routine */
-void * thread(void * vargp) {
-    int connfd = *((int *)vargp);
-    pthread_detach(pthread_self());
-    free(vargp);
-    // Process the header to get details of request
+void performOp(int op) {
+    int connfd;
     size_t n;
-    int keepalive = 0; /* Denotes if the current request is persistent */
-    int first = 1; /* Denotes if this is the first execution of the while loop */
+    int keepopen = 1;
     int msgsz; /* Size of data read from the file */
-    char buf[MAXLINE]; /* Request full message */
-    char *resp = (char*) malloc (MAXBUF*sizeof(char)); /* Response header */
+    char buf[MAXREAD]; /* Request full message */
+    char *resp = (char*) malloc (MAXREAD*sizeof(char)); /* Response header */
     unsigned char *msg = (char*) malloc (MAXREAD*sizeof(char)); /* Data read from the file */
     char *context = NULL; /* Pointer used for string tokenizer */
     char *comd; /* Incoming HTTP command */
@@ -67,12 +70,8 @@ void * thread(void * vargp) {
     char *postdata; /* Postdata to be appended to the request */
     char c;
     FILE *fp; /* File descriptor to open the file */
-    while (keepalive || first) {
-        if (!first)
-            printf("Waiting for incoming request\n");
-        else
-            first = 0;
-        n = read(connfd, buf, MAXLINE);
+    while (keepopen) {
+        n = read(connfd, buf, MAXREAD);
         if ((int)n >= 0) {
             printf("Request received\n");
         }
@@ -81,6 +80,35 @@ void * thread(void * vargp) {
     close(connfd);
     return NULL;
 }
+
+/* 
+ * open_sendfd - open and return a sending socket on port
+ * Returns -1 in case of failure 
+ */
+int open_sendfd(int port, char *hostip) {
+    int sendfd;
+    struct sockaddr_in serveraddr;
+
+    /* Create a socket descriptor */
+    if ((sendfd = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+        return -1;
+    
+    /* Sets a timeout of 10 secs. */
+    /*struct timeval tv;
+    tv.tv_sec = 10;
+    tv.tv_usec = 0;
+    if (setsockopt(sendfd, SOL_SOCKET, SO_RCVTIMEO,
+                    (struct timeval *)&tv,sizeof(struct timeval)) < 0)
+        return -1;*/
+
+    bzero((char *) &serveraddr, sizeof(serveraddr));
+    serveraddr.sin_family = AF_INET; 
+    serveraddr.sin_addr.s_addr = inet_addr(hostip);
+    serveraddr.sin_port = htons((unsigned short)port);
+    if (connect(sendfd, (struct sockaddr*)&serveraddr, sizeof(serveraddr)) < 0)
+        return -1;
+    return sendfd;
+} /* end open_sendfd */
 
 /* 
  * open_listenfd - open and return a listening socket on port
