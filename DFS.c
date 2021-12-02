@@ -98,11 +98,15 @@ void * thread(void * vargp) {
                     if (keep != NULL && strcmp(keep, "1") == 0)
                         keepopen = 1;
                     sprintf(fname,"./DFS%d/%s/%s", dfsno, uname, tgtpath);
+                    sprintf(resp, "PUT RECEIVED");
+                    write(connfd, resp, strlen(resp));
                     fp = fopen(fname, "wb+");
                     m = 1;
                     while ((int)m > 0) {
                         bzero(buf1, MAXREAD);
+                        printf("waiting for buf1\n");
                         m = read(connfd, buf1, MAXREAD); // DATA
+                        printf("buf1 = %s\n", buf1);
                         fwrite(buf1, 1, m, fp);
                     }
                     fclose(fp);
