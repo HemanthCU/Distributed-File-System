@@ -72,33 +72,44 @@ void * thread(void * vargp) {
     char *httpver;
     char *uname;
     char *pass;
+    char *keep;
     FILE *fp;
     struct stat sb;
     while(keepopen) {
         keepopen = 0;
+        bzero(buf, MAXREAD);
         n = read(connfd, buf, MAXREAD); // COMD UNAME PASS FNAME
         if ((int)n >= 0) {
             printf("Request received\n");
+            context = NULL;
             comd = strtok_r(buf, " \t\r\n\v\f", &context);
             uname = strtok_r(NULL, " \t\r\n\v\f", &context);
             pass = strtok_r(NULL, " \t\r\n\v\f", &context);
+            //printf("%s %s\n", uname, pass);
             if (checkCreds(uname, pass)) {
                 if (strcmp(comd, "GET") == 0) {
+                    printf("GET called\n");
                     tgtpath = strtok_r(NULL, " \t\r\n\v\f", &context);
                 } else if (strcmp(comd, "PUT") == 0) {
+                    printf("PUT called\n");
                     tgtpath = strtok_r(NULL, " \t\r\n\v\f", &context);
+                    printf("%s\n", tgtpath);
+                    keep = strtok_r(NULL, " \t\r\n\v\f", &context);
+                    if (keep != NULL && strcmp(keep, "1") == 0)
+                        keepopen = 1;
                     sprintf(fname,"./DFS%d/%s/%s", dfsno, uname, tgtpath);
                     fp = fopen(fname, "wb+");
                     m = 1;
                     while ((int)m > 0) {
+                        bzero(buf1, MAXREAD);
                         m = read(connfd, buf1, MAXREAD); // DATA
                         fwrite(buf1, 1, m, fp);
                     }
                     fclose(fp);
                 } else if (strcmp(comd, "LIST") == 0) {
-                    
+                    printf("LIST called\n");                    
                 } else if (strcmp(comd, "MKDIR") == 0) {
-                    keepopen = 1;
+                    printf("MKDIR called\n");
                     sprintf(folder, "./DFS%d/%s", dfsno, uname);
                     if (!(stat(folder, &sb) == 0 && S_ISDIR(sb.st_mode))) {
                         if (mkdir(folder, 0777) == -1) {
@@ -143,7 +154,7 @@ int open_listenfd(int port) {
 
     /* Sets a timeout of 10 secs. */
     struct timeval tv;
-    tv.tv_sec = 10;
+    tv.tv_sec = 20;
     tv.tv_usec = 0;
     if (setsockopt(listenfd, SOL_SOCKET, SO_RCVTIMEO,
                     (struct timeval *)&tv,sizeof(struct timeval)) < 0)
