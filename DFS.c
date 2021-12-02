@@ -90,6 +90,30 @@ void * thread(void * vargp) {
                 if (strcmp(comd, "GET") == 0) {
                     printf("GET called\n");
                     tgtpath = strtok_r(NULL, " \t\r\n\v\f", &context);
+                    sprintf(fname,"./DFS%d/%s/%s", dfsno, uname, tgtpath);
+                    fp = fopen(fname, "rb+");
+                    if (fp == NULL) {
+                        sprintf(resp, "FAILED TO OPEN FILE");
+                        write(connfd, resp, strlen(resp));
+                    } else {
+                        n = fread(msg, 1, MAXREAD, fp);
+                        fclose(fp);
+                        if ((int)n >= 0) {
+                            sprintf(resp, "SUCCESSFULLY READ FILE");
+                            write(connfd, resp, strlen(resp));
+                            bzero(buf1, MAXREAD);
+                            m = read(connfd, buf1, MAXREAD);
+                            if ((int)m >= 0) {
+                                printf("DATA SENT\n");
+                                write(connfd, msg, n);
+                            } else {
+                                printf("NO RESPONSE RECEIVED\n");
+                            }
+                        } else {
+                            sprintf(resp, "FAILED TO READ FILE");
+                            write(connfd, resp, strlen(resp));
+                        }
+                    }
                 } else if (strcmp(comd, "PUT") == 0) {
                     printf("PUT called\n");
                     tgtpath = strtok_r(NULL, " \t\r\n\v\f", &context);
@@ -104,9 +128,9 @@ void * thread(void * vargp) {
                     m = 1;
                     while ((int)m > 0) {
                         bzero(buf1, MAXREAD);
-                        printf("waiting for buf1\n");
+                        //printf("waiting for buf1\n");
                         m = read(connfd, buf1, MAXREAD); // DATA
-                        printf("buf1 = %s\n", buf1);
+                        //printf("buf1 = %s\n", buf1);
                         fwrite(buf1, 1, m, fp);
                     }
                     fclose(fp);

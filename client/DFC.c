@@ -19,7 +19,7 @@
 
 int open_listenfd(int port);
 int open_sendfd(int port, char *hostip);
-void performOp(int op, char *fname);
+void performOp(int op, char *fname, char *conffname);
 char* toLowerStr(char* str);
 int getHashVal(char* fname);
 
@@ -27,15 +27,17 @@ int main(int argc, char **argv) {
     int op, *connfdp, port, clientlen=sizeof(struct sockaddr_in);
     char* oper = (char*) malloc (10 * sizeof(char));
     char* fname = (char*) malloc (100 * sizeof(char));
+    char* conffname = (char*) malloc (100 * sizeof(char));
     struct sockaddr_in clientaddr;
     pthread_t tid; 
 
-    if (argc != 2) {
-        fprintf(stderr, "usage: %s <port>\n", argv[0]);
+    if (argc != 3) {
+        fprintf(stderr, "usage: %s <port> <conf_file_name>\n", argv[0]);
         exit(0);
     }
     op = 1;
     port = atoi(argv[1]);
+    strcpy(conffname, argv[2]);
     while(op >= 1 && op <= 3) {
         printf("Enter the operation:\n");
         scanf("%s", oper);
@@ -57,7 +59,7 @@ int main(int argc, char **argv) {
             printf("\nInvalid operation\n");
         }
         if (op >= 1 && op <= 3)
-            performOp(op, fname);
+            performOp(op, fname, conffname);
         else if (op == 4)
             return 0;
     }
@@ -79,40 +81,89 @@ char* toLowerStr(char* oper) {
 }
 
 /* thread routine */
-void performOp(int op, char *fname) {
+void performOp(int op, char *fname, char *conffname) {
     int connfd;
-    size_t n, l, k;
+    size_t n, m, l, k;
     int n1;
     int i, keepopen = 1;
     char buf[MAXREAD];
     char *resp = (char*) malloc (MAXREAD*sizeof(char));
     char *msg = (char*) malloc (MAXREAD*sizeof(char));
     char **msgpart = (char**) malloc (4*sizeof(char*));
+    char *confdata = (char*) malloc (MAXREAD*sizeof(char));
+    char **dfsip = (char**) malloc (4*sizeof(char*));
+    char **dfsport = (char**) malloc (4*sizeof(char*));
     for (i = 0; i < 4; i++) {
         msgpart[i] = (char*) malloc (MAXREAD*sizeof(char));
+        dfsip[i] = (char*) malloc (20*sizeof(char));
+        dfsport[i] = (char*) malloc (6*sizeof(char));
     }
     char *context = NULL;
+    char *temp;
     char *tgtpath1 = (char*) malloc (100*sizeof(char));
     char *uname = (char*) malloc (100*sizeof(char));
     char *pass = (char*) malloc (100*sizeof(char));
     char *fname1 = (char*) malloc (100*sizeof(char));
     char c;
-    FILE *fp;
+    FILE *fp, *fp1;
     int dfsfd1[4];
     int dfsfd2[4];
     int partsize[4];
-    int x;
+    int sendport[4];
+    int x = getHashVal(fname);
 
-    //TODO: GET USER DETAILS
-    strcpy(uname, "testuser");
-    strcpy(pass, "testpass");
-
+    fp1 = fopen(conffname, "rb+");
+    n = fread(confdata, 1, MAXREAD, fp1);
+    fclose(fp1);
+    //printf("%s\n", confdata);
     for (i = 0; i < 4; i++) {
-        dfsfd1[i] = open_sendfd(10001 + i, "127.0.0.1");
+        if (i == 0)
+            temp = strtok_r(confdata, " \t\r\n\v\f:", &context);
+        else
+            temp = strtok_r(NULL, " \t\r\n\v\f:", &context);
+        temp = strtok_r(NULL, " \t\r\n\v\f:", &context);
+        temp = strtok_r(NULL, " \t\r\n\v\f:", &context);
+        strcpy(dfsip[i], temp);
+        temp = strtok_r(NULL, " \t\r\n\v\f:", &context);
+        strcpy(dfsport[i], temp);
+        sendport[i] = atoi(dfsport[i]);
     }
+
+    temp = strtok_r(NULL, " \t\r\n\v\f:", &context);
+    temp = strtok_r(NULL, " \t\r\n\v\f:", &context);
+    strcpy(uname, temp);
+    temp = strtok_r(NULL, " \t\r\n\v\f:", &context);
+    temp = strtok_r(NULL, " \t\r\n\v\f:", &context);
+    strcpy(pass, temp);
+
+    /*for (i = 0; i < 4; i++) {
+        printf("%s %d\n", dfsip[i], sendport[i]);
+    }
+    printf("%s %s\n", uname, pass);*/
+
+    /*strcpy(uname, "testuser");
+    strcpy(pass, "testpass");*/
 
     if (op == 1) {
         //GET
+        for (i = 0; i < 4; i++) {
+            dfsfd1[(i + x) % 4] = open_sendfd(sendport[(i + x) % 4], dfsip[(i + x) % 4]);
+            sprintf(fname1, ".%s.%d", fname, i + 1);
+            sprintf(resp, "GET %s %s %s end", uname, pass, fname1);
+            write(dfsfd1[(i + x) % 4], resp, strlen(resp));
+            bzero(buf, MAXREAD);
+            n = read(dfsfd1[(i + x) % 4], buf, MAXREAD);
+            if ((int)n < 0 || buf[0] == 'F') {
+                printf("Failed to create directories\n");
+                return;
+            }
+            sprintf(resp, "READY TO RECEIVE");
+            write(dfsfd1[(i + x) % 4], resp, strlen(resp));
+
+            //TODO: READ DATA FROM SERVERS
+
+            //TODO: COMBINE PARTS INTO SINGLE FILE
+        }
     } else if (op == 2) {
         //PUT
         fp = fopen(fname, "rb+");
@@ -126,15 +177,12 @@ void performOp(int op, char *fname) {
         }
 
         //SEND MKDIR TO SERVERS
-        bzero(resp, 100);
+        bzero(resp, MAXREAD);
         sprintf(resp, "MKDIR %s %s", uname, pass);
         printf("%s\n", resp);
         for (i = 0; i < 4; i++) {
+            dfsfd1[i] = open_sendfd(sendport[i], dfsip[i]);
             write(dfsfd1[i], resp, strlen(resp));
-        }
-
-        //GET RESPONSE FROM SERVERS
-        for (i = 0; i < 4; i++) {
             bzero(buf, MAXREAD);
             n = read(dfsfd1[i], buf, MAXREAD);
             if ((int)n < 0 || buf[0] == 'F') {
@@ -145,7 +193,7 @@ void performOp(int op, char *fname) {
 
         //SEND PUT AND DATA TO SERVERS
         for (i = 0; i < 4; i++) {
-            dfsfd1[i] = open_sendfd(10001 + i, "127.0.0.1");
+            dfsfd1[(i + x) % 4] = open_sendfd(sendport[(i + x) % 4], dfsip[(i + x) % 4]);
             bzero(fname1, 100);
             sprintf(fname1, ".%s.%d", fname, i + 1);
             printf("%s\n", fname1);
@@ -157,7 +205,7 @@ void performOp(int op, char *fname) {
                 return;
             write(dfsfd1[(i + x) % 4], msgpart[i], partsize[i]);
 
-            dfsfd2[i] = open_sendfd(10001 + i, "127.0.0.1");
+            dfsfd2[(i + x) % 4] = open_sendfd(sendport[(i + x) % 4], dfsip[(i + x) % 4]);
             bzero(fname1, 100);
             sprintf(fname1, ".%s.%d", fname, ((i + 1) % 4) + 1);
             printf("%s\n", fname1);
