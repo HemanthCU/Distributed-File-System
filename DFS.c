@@ -125,15 +125,19 @@ void * thread(void * vargp) {
                     sprintf(resp, "PUT RECEIVED");
                     write(connfd, resp, strlen(resp));
                     fp = fopen(fname, "wb+");
+                    fclose(fp);
                     m = 1;
                     while ((int)m > 0) {
                         bzero(buf1, MAXREAD);
                         //printf("waiting for buf1\n");
                         m = read(connfd, buf1, MAXREAD); // DATA
-                        //printf("buf1 = %s\n", buf1);
-                        fwrite(buf1, 1, m, fp);
+                        //printf("buf1 = %s#\n", buf1);
+                        if ((int)m > 0) {
+                            fp = fopen(fname, "ab+");
+                            fwrite(buf1, 1, m, fp);
+                            fclose(fp);
+                        }
                     }
-                    fclose(fp);
                 } else if (strcmp(comd, "LIST") == 0) {
                     printf("LIST called\n");                    
                 } else if (strcmp(comd, "MKDIR") == 0) {

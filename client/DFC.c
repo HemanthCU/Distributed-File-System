@@ -87,6 +87,7 @@ void performOp(int op, char *fname, char *conffname) {
     int n1;
     int i, keepopen = 1;
     char buf[MAXREAD];
+    char buf1[MAXREAD];
     char *resp = (char*) malloc (MAXREAD*sizeof(char));
     char *msg = (char*) malloc (MAXREAD*sizeof(char));
     char **msgpart = (char**) malloc (4*sizeof(char*));
@@ -111,6 +112,7 @@ void performOp(int op, char *fname, char *conffname) {
     int partsize[4];
     int sendport[4];
     int x = getHashVal(fname);
+    int pnt;
 
     fp1 = fopen(conffname, "rb+");
     n = fread(confdata, 1, MAXREAD, fp1);
@@ -154,22 +156,36 @@ void performOp(int op, char *fname, char *conffname) {
             bzero(buf, MAXREAD);
             n = read(dfsfd1[(i + x) % 4], buf, MAXREAD);
             if ((int)n < 0 || buf[0] == 'F') {
-                printf("Failed to create directories\n");
+                printf("Server failed to read the file\n");
                 return;
             }
             sprintf(resp, "READY TO RECEIVE");
             write(dfsfd1[(i + x) % 4], resp, strlen(resp));
-
-            //TODO: READ DATA FROM SERVERS
-
-            //TODO: COMBINE PARTS INTO SINGLE FILE
+            bzero(buf, MAXREAD);
+            pnt = 0;
+            while((int)n > 0) {
+                //TODO: COMBINE READS INTO SINGLE BUFFER
+                n = read(dfsfd1[(i + x) % 4], buf, MAXREAD);
+                memcpy(buf1 + pnt, buf, n);
+                pnt += (int)n;
+            }
+            bzero(msgpart[i], MAXREAD);
+            memcpy(msgpart[i], buf1, pnt);
+            partsize[i] = pnt;
         }
+        //TODO: COMBINE PARTS INTO SINGLE FILE
+        fp = fopen(fname, "wb+");
+        for (i = 0; i < 4; i++) {
+            fwrite(msgpart[i], 1, partsize[i], fp);
+        }
+        fclose(fp);
     } else if (op == 2) {
         //PUT
         fp = fopen(fname, "rb+");
         n = fread(msg, 1, MAXREAD, fp);
         fclose(fp);
         n1 = (int) n;
+        printf("n1 = %d\n", n1);
         for (i = 0; i < 4; i++) {
             partsize[i] = (i == 3) ? n1 - (3 * (n1 / 4)) : n1 / 4;
             //SPLIT INTO PARTS
