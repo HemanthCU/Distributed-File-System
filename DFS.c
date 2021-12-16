@@ -13,9 +13,10 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 #include <sys/stat.h>
+#include <dirent.h> 
 
 #define LISTENQ  1024  /* second argument to listen() */
-#define MAXREAD  80000
+#define MAXREAD  200000
 
 int open_listenfd(int port);
 void *thread(void *vargp);
@@ -46,7 +47,35 @@ int main(int argc, char **argv) {
 }
 
 int checkCreds(char* uname, char* pass) {
-    return 1;
+    FILE *fp;
+    size_t n;
+    char *confdata = (char*) malloc (MAXREAD*sizeof(char));
+    char *context = NULL;
+    char *temp, *temp1;
+
+    bzero(confdata, MAXREAD);
+    fp = fopen("dfs.conf", "rb+");
+    n = fread(confdata, 1, MAXREAD, fp);
+    fclose(fp);
+    temp = strtok_r(confdata, " \t\r\n\v\f", &context);
+    if (temp == NULL)
+        return 0;
+    temp1 = strtok_r(NULL, " \t\r\n\v\f", &context);
+    if (temp1 == NULL)
+        return 0;
+    if (strcmp(temp, uname) == 0 && strcmp(temp1, pass) == 0)
+            return 1;
+    while (temp != NULL && temp1 != NULL) {
+        temp = strtok_r(NULL, " \t\r\n\v\f", &context);
+        if (temp == NULL)
+            return 0;
+        temp1 = strtok_r(NULL, " \t\r\n\v\f", &context);
+        if (temp == NULL)
+            return 0;
+        if (strcmp(temp, uname) == 0 && strcmp(temp1, pass) == 0)
+            return 1;
+    }
+    return 0;
 }
 
 /* thread routine */
@@ -66,21 +95,25 @@ void * thread(void * vargp) {
     char *comd;
     char *host;
     char *temp = NULL;
+    char *temp1 = (char*) malloc (100*sizeof(char));
     char *tgtpath;
     char *fname = (char*) malloc (100*sizeof(char));
+    char *dirname = (char*) malloc (100*sizeof(char));
     char *folder = (char*) malloc (100*sizeof(char));
     char *httpver;
     char *uname;
     char *pass;
     char *keep;
     FILE *fp;
+    DIR *d;
+    struct dirent *dir;
     struct stat sb;
     while(keepopen) {
         keepopen = 0;
         bzero(buf, MAXREAD);
         n = read(connfd, buf, MAXREAD); // COMD UNAME PASS FNAME
         if ((int)n >= 0) {
-            printf("Request received\n");
+            //printf("Request received\n");
             context = NULL;
             comd = strtok_r(buf, " \t\r\n\v\f", &context);
             uname = strtok_r(NULL, " \t\r\n\v\f", &context);
@@ -97,15 +130,17 @@ void * thread(void * vargp) {
                         write(connfd, resp, strlen(resp));
                     } else {
                         n = fread(msg, 1, MAXREAD, fp);
-                        fclose(fp);
                         if ((int)n >= 0) {
                             sprintf(resp, "SUCCESSFULLY READ FILE");
                             write(connfd, resp, strlen(resp));
                             bzero(buf1, MAXREAD);
                             m = read(connfd, buf1, MAXREAD);
                             if ((int)m >= 0) {
-                                printf("DATA SENT\n");
-                                write(connfd, msg, n);
+                                while ((int) n > 0) {
+                                    printf("DATA SENT\n");
+                                    write(connfd, msg, n);
+                                    n = fread(msg, 1, MAXREAD, fp);
+                                }
                             } else {
                                 printf("NO RESPONSE RECEIVED\n");
                             }
@@ -113,11 +148,12 @@ void * thread(void * vargp) {
                             sprintf(resp, "FAILED TO READ FILE");
                             write(connfd, resp, strlen(resp));
                         }
+                        fclose(fp);
                     }
                 } else if (strcmp(comd, "PUT") == 0) {
                     printf("PUT called\n");
                     tgtpath = strtok_r(NULL, " \t\r\n\v\f", &context);
-                    printf("%s\n", tgtpath);
+                    //printf("%s\n", tgtpath);
                     keep = strtok_r(NULL, " \t\r\n\v\f", &context);
                     if (keep != NULL && strcmp(keep, "1") == 0)
                         keepopen = 1;
@@ -139,7 +175,20 @@ void * thread(void * vargp) {
                         }
                     }
                 } else if (strcmp(comd, "LIST") == 0) {
-                    printf("LIST called\n");                    
+                    printf("LIST called\n");
+                    sprintf(dirname,"./DFS%d/%s", dfsno, uname);
+                    d = opendir(dirname);
+                    dir = readdir(d);
+                    while(dir != NULL) {
+                        if (strcmp(dir->d_name, ".") != 0 && strcmp(dir->d_name, "..") != 0) {
+                            strcpy(fname, dir->d_name);
+                            bzero(temp1, 100);
+                            memcpy(temp1, fname + 1, strlen(fname) - 3);
+                            write(connfd, temp1, strlen(temp1));
+                            m = read(connfd, buf1, MAXREAD);
+                        }
+                        dir = readdir(d);
+                    }
                 } else if (strcmp(comd, "MKDIR") == 0) {
                     printf("MKDIR called\n");
                     sprintf(folder, "./DFS%d/%s", dfsno, uname);
@@ -159,10 +208,14 @@ void * thread(void * vargp) {
                 }
             } else {
                 //WRONG CREDENTIALS
+                printf("AUTH Failed\n");
+                bzero(resp, MAXREAD);
+                sprintf(resp, "AUTHENTICATION FAILED");
+                write(connfd, resp, strlen(resp));
             }
         }
     }
-    printf("Closing thread\n");
+    //printf("Closing thread\n");
     close(connfd);
     return NULL;
 }

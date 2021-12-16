@@ -15,17 +15,16 @@
 #include <ctype.h>
 
 #define LISTENQ  1024  /* second argument to listen() */
-#define MAXREAD  80000
+#define MAXREAD  200000
 
 int open_listenfd(int port);
 int open_sendfd(int port, char *hostip);
 void performOp(int op, char *fname, char *conffname);
-char* toLowerStr(char* str);
 int getHashVal(char* fname);
 
 int main(int argc, char **argv) {
     int op, *connfdp, port, clientlen=sizeof(struct sockaddr_in);
-    char* oper = (char*) malloc (10 * sizeof(char));
+    char* oper = (char*) malloc (100 * sizeof(char));
     char* fname = (char*) malloc (100 * sizeof(char));
     char* conffname = (char*) malloc (100 * sizeof(char));
     struct sockaddr_in clientaddr;
@@ -35,28 +34,31 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: %s <port> <conf_file_name>\n", argv[0]);
         exit(0);
     }
-    op = 1;
+    op = 0;
     port = atoi(argv[1]);
     strcpy(conffname, argv[2]);
-    while(op >= 1 && op <= 3) {
+    while(1) {
         printf("Enter the operation:\n");
+        bzero(oper, 100);
+        bzero(fname, 100);
         scanf("%s", oper);
-        if (strcmp(toLowerStr(oper), "get") == 0) {
+        if (strcmp(oper, "get") == 0) {
             printf("Enter the filename:\n");
             scanf("%s", fname);
             op = 1;
-        } else if (strcmp(toLowerStr(oper), "put") == 0) {
+        } else if (strcmp(oper, "put") == 0) {
             printf("Enter the filename:\n");
             scanf("%s", fname);
             op = 2;
-        } else if (strcmp(toLowerStr(oper), "list") == 0) {
+        } else if (strcmp(oper, "list") == 0) {
             strcpy(fname, "");
             op = 3;
-        } else if (strcmp(toLowerStr(oper), "exit") == 0) {
+        } else if (strcmp(oper, "exit") == 0) {
             strcpy(fname, "");
             op = 4;
         } else {
             printf("\nInvalid operation\n");
+            return 0;
         }
         if (op >= 1 && op <= 3)
             performOp(op, fname, conffname);
@@ -67,28 +69,18 @@ int main(int argc, char **argv) {
 }
 
 int getHashVal(char* fname) {
-    return 0;
+    return (int)strlen(fname) % 4;
 }
 
-char* toLowerStr(char* oper) {
-    char* operlower = (char*) malloc (10 * sizeof(char));
-    size_t n = strlen(oper);
-    int i;
-    for (i = 0; i < (int)n; i++) {
-        operlower[i] = tolower(oper[i]);
-    }
-    return operlower;
-}
-
-/* thread routine */
 void performOp(int op, char *fname, char *conffname) {
     int connfd;
     size_t n, m, l, k;
     int n1;
-    int i, keepopen = 1;
+    int i, j, keepopen = 1;
     char buf[MAXREAD];
     char buf1[MAXREAD];
     char *resp = (char*) malloc (MAXREAD*sizeof(char));
+    char *resp1 = (char*) malloc (MAXREAD*sizeof(char));
     char *msg = (char*) malloc (MAXREAD*sizeof(char));
     char **msgpart = (char**) malloc (4*sizeof(char*));
     char *confdata = (char*) malloc (MAXREAD*sizeof(char));
@@ -105,6 +97,11 @@ void performOp(int op, char *fname, char *conffname) {
     char *uname = (char*) malloc (100*sizeof(char));
     char *pass = (char*) malloc (100*sizeof(char));
     char *fname1 = (char*) malloc (100*sizeof(char));
+    char **flist = (char**) malloc (100*sizeof(char*));
+    int *ccount = (int*) malloc (100*sizeof(int));
+    for (i = 0; i < 100; i++) {
+        flist[i] = (char*) malloc (100*sizeof(char));
+    }
     char c;
     FILE *fp, *fp1;
     int dfsfd1[4];
@@ -113,6 +110,8 @@ void performOp(int op, char *fname, char *conffname) {
     int sendport[4];
     int x = getHashVal(fname);
     int pnt;
+    int fcount;
+    int ffound;
 
     fp1 = fopen(conffname, "rb+");
     n = fread(confdata, 1, MAXREAD, fp1);
@@ -138,14 +137,6 @@ void performOp(int op, char *fname, char *conffname) {
     temp = strtok_r(NULL, " \t\r\n\v\f:", &context);
     strcpy(pass, temp);
 
-    /*for (i = 0; i < 4; i++) {
-        printf("%s %d\n", dfsip[i], sendport[i]);
-    }
-    printf("%s %s\n", uname, pass);*/
-
-    /*strcpy(uname, "testuser");
-    strcpy(pass, "testpass");*/
-
     if (op == 1) {
         //GET
         for (i = 0; i < 4; i++) {
@@ -158,13 +149,15 @@ void performOp(int op, char *fname, char *conffname) {
             if ((int)n < 0 || buf[0] == 'F') {
                 printf("Server failed to read the file\n");
                 return;
+            } else if (buf[0] == 'A') {
+                printf("Authentication Failed\n");
+                return;
             }
             sprintf(resp, "READY TO RECEIVE");
             write(dfsfd1[(i + x) % 4], resp, strlen(resp));
             bzero(buf, MAXREAD);
             pnt = 0;
             while((int)n > 0) {
-                //TODO: COMBINE READS INTO SINGLE BUFFER
                 n = read(dfsfd1[(i + x) % 4], buf, MAXREAD);
                 memcpy(buf1 + pnt, buf, n);
                 pnt += (int)n;
@@ -173,19 +166,21 @@ void performOp(int op, char *fname, char *conffname) {
             memcpy(msgpart[i], buf1, pnt);
             partsize[i] = pnt;
         }
-        //TODO: COMBINE PARTS INTO SINGLE FILE
         fp = fopen(fname, "wb+");
         for (i = 0; i < 4; i++) {
             fwrite(msgpart[i], 1, partsize[i], fp);
         }
         fclose(fp);
+        for (i = 0; i < 4; i++) {
+            close(dfsfd1[i]);
+        }
     } else if (op == 2) {
         //PUT
         fp = fopen(fname, "rb+");
         n = fread(msg, 1, MAXREAD, fp);
         fclose(fp);
         n1 = (int) n;
-        printf("n1 = %d\n", n1);
+        //printf("n1 = %d\n", n1);
         for (i = 0; i < 4; i++) {
             partsize[i] = (i == 3) ? n1 - (3 * (n1 / 4)) : n1 / 4;
             //SPLIT INTO PARTS
@@ -195,7 +190,7 @@ void performOp(int op, char *fname, char *conffname) {
         //SEND MKDIR TO SERVERS
         bzero(resp, MAXREAD);
         sprintf(resp, "MKDIR %s %s", uname, pass);
-        printf("%s\n", resp);
+        //printf("%s\n", resp);
         for (i = 0; i < 4; i++) {
             dfsfd1[i] = open_sendfd(sendport[i], dfsip[i]);
             write(dfsfd1[i], resp, strlen(resp));
@@ -203,6 +198,9 @@ void performOp(int op, char *fname, char *conffname) {
             n = read(dfsfd1[i], buf, MAXREAD);
             if ((int)n < 0 || buf[0] == 'F') {
                 printf("Failed to create directories\n");
+                return;
+            } else if (buf[0] == 'A') {
+                printf("Authentication Failed\n");
                 return;
             }
         }
@@ -212,7 +210,7 @@ void performOp(int op, char *fname, char *conffname) {
             dfsfd1[(i + x) % 4] = open_sendfd(sendport[(i + x) % 4], dfsip[(i + x) % 4]);
             bzero(fname1, 100);
             sprintf(fname1, ".%s.%d", fname, i + 1);
-            printf("%s\n", fname1);
+            //printf("%s\n", fname1);
             bzero(resp, 100);
             sprintf(resp, "PUT %s %s %s end", uname, pass, fname1);
             write(dfsfd1[(i + x) % 4], resp, strlen(resp));
@@ -224,7 +222,7 @@ void performOp(int op, char *fname, char *conffname) {
             dfsfd2[(i + x) % 4] = open_sendfd(sendport[(i + x) % 4], dfsip[(i + x) % 4]);
             bzero(fname1, 100);
             sprintf(fname1, ".%s.%d", fname, ((i + 1) % 4) + 1);
-            printf("%s\n", fname1);
+            //printf("%s\n", fname1);
             bzero(resp, 100);
             sprintf(resp, "PUT %s %s %s end", uname, pass, fname1);
             write(dfsfd2[(i + x) % 4], resp, strlen(resp));
@@ -232,12 +230,60 @@ void performOp(int op, char *fname, char *conffname) {
             if ((int)k < 0)
                 return;
             write(dfsfd2[(i + x) % 4], msgpart[(i + 1) % 4], partsize[(i + 1) % 4]);
-            printf("\n");
+            //printf("\n");
+        }
+        for (i = 0; i < 4; i++) {
+            close(dfsfd1[i]);
+            close(dfsfd2[i]);
         }
     } else if (op == 3) {
         //LIST
+        fcount = 0;
+        sprintf(resp, "LIST %s %s", uname, pass);
+        for (i = 0; i < 4; i++) {
+            dfsfd1[i] = open_sendfd(sendport[i], dfsip[i]);
+            write(dfsfd1[i], resp, strlen(resp));
+            n = 1;
+            while ((int) n > 0) {
+                bzero(buf, MAXREAD);
+                n = read(dfsfd1[i], buf, MAXREAD);
+                if ((int)n < 0 || strcmp(buf, "AUTHENTICATION FAILED") == 0) {
+                    printf("Authentication Failed\n");
+                    return;
+                }
+                sprintf(resp1, "ITEM RECEIVED");
+                write(dfsfd1[i], resp1, strlen(resp1));
+                if ((int) n > 0) {
+                    ffound = 0;
+                    for (j = 0; j < fcount; j++) {
+                        if (strcmp(buf, flist[j]) == 0) {
+                            ccount[j]++;
+                            ffound = 1;
+                        }
+                    }
+                    if (ffound == 0) {
+                        ccount[fcount] = 1;
+                        bzero(flist[fcount], 100);
+                        strcpy(flist[fcount], buf);
+                        fcount++;
+                    }
+                }
+            }
+        }
+        printf("\nThe following files are available:\n");
+        for (i = 0; i < fcount; i++) {
+            printf("%s", flist[i]);
+            if (ccount[i] != 8) {
+                printf(" [Incomplete]");
+            }
+            printf("\n");
+        }
+        printf("\n");
+        for (i = 0; i < 4; i++) {
+            close(dfsfd1[i]);
+        }
     }
-    printf("Closing thread\n");
+    //printf("Closing thread\n");
     return;
 }
 
