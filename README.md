@@ -16,7 +16,7 @@ gcc -pthread DFS.c -o server -lssl -lcrypto
 ./server 10004 &
 ```
 
-Build and run the client with the following:
+Build and run the client with the following (inside the client folder):
 
 ```
 gcc -pthread DFC.c -o client -lssl -lcrypto
