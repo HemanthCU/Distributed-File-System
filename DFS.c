@@ -207,6 +207,8 @@ void * thread(void * vargp) {
                 } else if (strcmp(comd, "MKDIR") == 0) {
                     printf("MKDIR called\n");
                     dirfail = 0;
+                    bzero(folder, 100);
+                    bzero(resp, 100);
                     sprintf(folder, "./DFS%d", dfsno);
                     if (!(stat(folder, &sb) == 0 && S_ISDIR(sb.st_mode))) {
                         if (mkdir(folder, 0777) == -1) {
