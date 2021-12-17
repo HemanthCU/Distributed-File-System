@@ -87,6 +87,7 @@ void * thread(void * vargp) {
     size_t n, m;
     int keepopen = 1;
     int msgsz;
+    int fcount;
     char buf[MAXREAD];
     char buf1[MAXREAD];
     char *resp = (char*) malloc (MAXREAD*sizeof(char));
@@ -116,6 +117,10 @@ void * thread(void * vargp) {
             //printf("Request received\n");
             context = NULL;
             comd = strtok_r(buf, " \t\r\n\v\f", &context);
+            if (strcmp(comd, "EXIT") == 0) {
+                printf("EXIT called\n");
+                exit(0);
+            }
             uname = strtok_r(NULL, " \t\r\n\v\f", &context);
             pass = strtok_r(NULL, " \t\r\n\v\f", &context);
             //printf("%s %s\n", uname, pass);
@@ -177,17 +182,26 @@ void * thread(void * vargp) {
                 } else if (strcmp(comd, "LIST") == 0) {
                     printf("LIST called\n");
                     sprintf(dirname,"./DFS%d/%s", dfsno, uname);
+                    fcount = 0;
                     d = opendir(dirname);
-                    dir = readdir(d);
-                    while(dir != NULL) {
-                        if (strcmp(dir->d_name, ".") != 0 && strcmp(dir->d_name, "..") != 0) {
-                            strcpy(fname, dir->d_name);
-                            bzero(temp1, 100);
-                            memcpy(temp1, fname + 1, strlen(fname) - 3);
-                            write(connfd, temp1, strlen(temp1));
-                            m = read(connfd, buf1, MAXREAD);
-                        }
+                    if (d != NULL) {
                         dir = readdir(d);
+                        while(dir != NULL) {
+                            if (dir != NULL && strcmp(dir->d_name, ".") != 0 && strcmp(dir->d_name, "..") != 0) {
+                                fcount++;
+                                strcpy(fname, dir->d_name);
+                                bzero(temp1, 100);
+                                memcpy(temp1, fname + 1, strlen(fname) - 3);
+                                write(connfd, temp1, strlen(temp1));
+                                m = read(connfd, buf1, MAXREAD);
+                            }
+                            dir = readdir(d);
+                        }
+                    }
+                    if (fcount == 0) {
+                        bzero(resp, MAXREAD);
+                        sprintf(resp, "LIST EMPTY");
+                        write(connfd, resp, strlen(resp));
                     }
                 } else if (strcmp(comd, "MKDIR") == 0) {
                     printf("MKDIR called\n");

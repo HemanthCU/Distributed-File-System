@@ -34,10 +34,15 @@ int main(int argc, char **argv) {
         fprintf(stderr, "usage: %s <port> <conf_file_name>\n", argv[0]);
         exit(0);
     }
-    op = 0;
     port = atoi(argv[1]);
     strcpy(conffname, argv[2]);
+    printf("Operations available:\n");
+    printf("1) get\n");
+    printf("2) put\n");
+    printf("3) list\n");
+    printf("4) exit\n");
     while(1) {
+        op = 0;
         printf("Enter the operation:\n");
         bzero(oper, 100);
         bzero(fname, 100);
@@ -62,8 +67,10 @@ int main(int argc, char **argv) {
         }
         if (op >= 1 && op <= 3)
             performOp(op, fname, conffname);
-        else if (op == 4)
+        else if (op == 4) {
+            performOp(op, fname, conffname);
             return 0;
+        }
     }
     return 0;
 }
@@ -250,6 +257,9 @@ void performOp(int op, char *fname, char *conffname) {
                 if ((int)n < 0 || strcmp(buf, "AUTHENTICATION FAILED") == 0) {
                     printf("Authentication Failed\n");
                     return;
+                } else if (strcmp(buf, "LIST EMPTY") == 0) {
+                    printf("No files available\n");
+                    return;
                 }
                 sprintf(resp1, "ITEM RECEIVED");
                 write(dfsfd1[i], resp1, strlen(resp1));
@@ -281,6 +291,13 @@ void performOp(int op, char *fname, char *conffname) {
         printf("\n");
         for (i = 0; i < 4; i++) {
             close(dfsfd1[i]);
+        }
+    } else if (op == 4) {
+        bzero(resp, MAXREAD);
+        sprintf(resp, "EXIT");
+        for (i = 0; i < 4; i++) {
+            dfsfd1[i] = open_sendfd(sendport[i], dfsip[i]);
+            write(dfsfd1[i], resp, strlen(resp));
         }
     }
     //printf("Closing thread\n");
