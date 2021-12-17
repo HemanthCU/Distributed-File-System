@@ -88,6 +88,7 @@ void * thread(void * vargp) {
     int keepopen = 1;
     int msgsz;
     int fcount;
+    int dirfail;
     char buf[MAXREAD];
     char buf1[MAXREAD];
     char *resp = (char*) malloc (MAXREAD*sizeof(char));
@@ -205,16 +206,29 @@ void * thread(void * vargp) {
                     }
                 } else if (strcmp(comd, "MKDIR") == 0) {
                     printf("MKDIR called\n");
-                    sprintf(folder, "./DFS%d/%s", dfsno, uname);
+                    dirfail = 0;
+                    sprintf(folder, "./DFS%d", dfsno);
                     if (!(stat(folder, &sb) == 0 && S_ISDIR(sb.st_mode))) {
                         if (mkdir(folder, 0777) == -1) {
                             //FAILED TO CREATE DIRECTORY
                             sprintf(resp, "FAILED TO CREATE DIRECTORY");
+                            dirfail = 1;
                         } else {
                             sprintf(resp, "SUCCESSFULLY CREATED DIRECTORY");
                         }
-                    } else {
-                        sprintf(resp, "DIRECTORY ALREADY EXISTS");
+                    }
+                    if (dirfail == 0) {
+                        sprintf(folder, "./DFS%d/%s", dfsno, uname);
+                        if (!(stat(folder, &sb) == 0 && S_ISDIR(sb.st_mode))) {
+                            if (mkdir(folder, 0777) == -1) {
+                                //FAILED TO CREATE DIRECTORY
+                                sprintf(resp, "FAILED TO CREATE DIRECTORY");
+                            } else {
+                                sprintf(resp, "SUCCESSFULLY CREATED DIRECTORY");
+                            }
+                        } else {
+                            sprintf(resp, "DIRECTORY ALREADY EXISTS");
+                        }
                     }
                     write(connfd, resp, strlen(resp));
                 } else {
