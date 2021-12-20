@@ -1,6 +1,6 @@
-# Network Systems Programming Assignment 4
+# Distributed File System
 
-This is an assignment to maintain a distributed file system that will split up a file into multiple parts and store these parts into 4 separate servers. The 4 parts are split up and 2 parts are sent each to each of the 4 servers creating a redundancy by making 2 copies of each part.
+This is a project to maintain a distributed file system that will split up a file into multiple parts and store these parts into 4 separate servers. The 4 parts are split up and 2 parts are sent each to each of the 4 servers creating a redundancy by making 2 copies of each part.
 
 The program also authenticates the user based on a dfc.conf file and comapres it with the usernames and passwords in the dfs.conf file.
 
