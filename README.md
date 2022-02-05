@@ -20,7 +20,7 @@ Build and run the client with the following (inside the client folder):
 
 ```
 gcc -pthread DFC.c -o client -lssl -lcrypto
-./cleint 8000 dfc.conf
+./client 8000 dfc.conf
 ```
 
 You can use the following 4 commands to perform the respective tasks (For get and put, the program will prompt for the filename after you enter the command):
